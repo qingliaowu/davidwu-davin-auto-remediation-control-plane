@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto Remediation Control Plane</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f8f9fa; color: #212529; }
+    h1 { font-size: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #dee2e6; }
+    th { background: #e9ecef; }
+    .muted { color: #6c757d; }
+    a { color: #0d6efd; }
+  </style>
+</head>
+<body>
+  <h1>Auto Remediation Control Plane</h1>
+  <p class="muted">Recent remediation dispatches</p>
+  {% if events %}
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Repository</th>
+        <th>Issue</th>
+        <th>Session</th>
+        <th>Devin Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in events %}
+      <tr>
+        <td>{{ event.status }}</td>
+        <td>{{ event.owner }}/{{ event.repo }}</td>
+        <td>#{{ event.issue_number }} {{ event.title }}</td>
+        <td>
+          {% if event.session_url %}
+          <a href="{{ event.session_url }}" target="_blank">{{ event.session_id or "link" }}</a>
+          {% elif event.session_id %}
+          {{ event.session_id }}
+          {% else %}
+          <span class="muted">-</span>
+          {% endif %}
+        </td>
+        <td>{{ event.devin_status or "-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No dispatches yet.</p>
+  {% endif %}
+</body>
+</html>

@@ -8,11 +8,14 @@ from fastapi import FastAPI, HTTPException, Request
 
 from auto_remediation.config import settings
 from auto_remediation.control_plane import ControlPlane
+from auto_remediation.dashboard import router as dashboard_router
 from auto_remediation.devin_client import DevinClientError
 from auto_remediation.models import GitHubIssueEvent, RemediationRequest
+from auto_remediation.store import store
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Auto Remediation Control Plane", version="0.1.0")
+app.include_router(dashboard_router)
 control_plane = ControlPlane()
 
 
@@ -63,6 +66,7 @@ async def github_webhook(request: Request) -> dict:
     except DevinClientError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    await store.record(result.model_dump())
     return result.model_dump()
 
 

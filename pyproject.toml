@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.3.0,<3.0.0",
     "httpx>=0.27.0,<0.30.0",
     "pygithub>=2.3.0,<3.0.0",
+    "jinja2>=3.1.0",
 ]
 
 [project.optional-dependencies]
