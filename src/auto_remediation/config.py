@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     devin_create_as_user_id: str | None = Field(
         default=None, description="User ID to attribute Devin sessions to"
     )
-    listen_host: str = "0.0.0.0"
+    listen_host: str = "127.0.0.1"
     listen_port: int = 8000
 
 
