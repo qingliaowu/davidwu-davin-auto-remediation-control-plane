@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Remediation Control Plane</title>
+    <style>
+        :root {
+            --bg: #f5f7fa;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --accent: #2563eb;
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --border: #e5e7eb;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        header {
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        header h1 { margin: 0; font-size: 1.25rem; }
+        .tagline { color: var(--muted); font-size: 0.875rem; }
+        main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        .card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+        .card .value { font-size: 1.5rem; font-weight: 600; margin-top: 0.25rem; }
+        .card.success .value { color: var(--success); }
+        .card.danger .value { color: var(--danger); }
+        .card.warning .value { color: var(--warning); }
+        .card.accent .value { color: var(--accent); }
+        section { background: var(--card); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.5rem; }
+        h2 { margin-top: 0; font-size: 1.125rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-weight: 600; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        tr:hover { background: #f9fafb; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .badge.dry-run { background: #fef3c7; color: #92400e; }
+        .badge.QUEUED, .badge.DISPATCHING { background: #dbeafe; color: #1e40af; }
+        .badge.RUNNING { background: #e0e7ff; color: #3730a3; }
+        .badge.WAITING_FOR_USER, .badge.WAITING_FOR_APPROVAL { background: #fef3c7; color: #92400e; }
+        .badge.SUCCEEDED { background: #dcfce7; color: #166534; }
+        .badge.FAILED { background: #fee2e2; color: #991b1b; }
+        .empty { color: var(--muted); padding: 2rem; text-align: center; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Auto Remediation Control Plane</h1>
+        <div class="tagline">The control plane governs the work. Devin performs the engineering.</div>
+    </header>
+    <main>
+        <div class="grid">
+            <div class="card">
+                <div class="label">Events Received</div>
+                <div class="value">{{ metrics.webhook_delivery_attempts }}</div>
+            </div>
+            <div class="card accent">
+                <div class="label">Eligible Tasks</div>
+                <div class="value">{{ metrics.eligible_tasks }}</div>
+            </div>
+            <div class="card accent">
+                <div class="label">Devin Sessions</div>
+                <div class="value">{{ metrics.devin_sessions_created }}</div>
+            </div>
+            <div class="card warning">
+                <div class="label">Active</div>
+                <div class="value">{{ metrics.active_tasks }}</div>
+            </div>
+            <div class="card warning">
+                <div class="label">Waiting</div>
+                <div class="value">{{ metrics.waiting_tasks }}</div>
+            </div>
+            <div class="card success">
+                <div class="label">Successful</div>
+                <div class="value">{{ metrics.successful_tasks }}</div>
+            </div>
+            <div class="card danger">
+                <div class="label">Failed</div>
+                <div class="value">{{ metrics.failed_tasks }}</div>
+            </div>
+            <div class="card accent">
+                <div class="label">Pull Requests</div>
+                <div class="value">{{ metrics.pull_requests_created }}</div>
+            </div>
+            <div class="card">
+                <div class="label">Success Rate</div>
+                <div class="value">{{ metrics.success_rate_percent }}%</div>
+            </div>
+            <div class="card">
+                <div class="label">Avg Duration</div>
+                <div class="value">{{ "%.1fs"|format(metrics.average_successful_task_duration_seconds) if metrics.average_successful_task_duration_seconds else "—" }}</div>
+            </div>
+            <div class="card">
+                <div class="label">ACUs Used</div>
+                <div class="value">{{ "%.2f"|format(metrics.total_acus_consumed) }}</div>
+            </div>
+        </div>
+
+        <section>
+            <h2>Recent Tasks</h2>
+            {% if tasks %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Task ID</th>
+                        <th>Issue</th>
+                        <th>Repository</th>
+                        <th>Status</th>
+                        <th>Dry Run</th>
+                        <th>Duration</th>
+                        <th>Devin Session</th>
+                        <th>PR Link</th>
+                        <th>Verification</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                    <tr>
+                        <td><a href="/dashboard/tasks/{{ task.task_id }}">{{ task.task_id[:8] }}…</a></td>
+                        <td>#{{ task.issue_number }} {{ task.issue_title or "—" }}</td>
+                        <td>{{ task.repository }}</td>
+                        <td><span class="badge {{ task.status }}">{{ task.status }}</span></td>
+                        <td>{% if task.dry_run %}<span class="badge dry-run">DRY RUN</span>{% else %}—{% endif %}</td>
+                        <td>{{ "%.1fs"|format(task.duration_seconds) if task.duration_seconds is not none else "—" }}</td>
+                        <td>{% if task.devin_session_url %}<a href="{{ task.devin_session_url }}" target="_blank" rel="noopener">Open</a>{% else %}—{% endif %}</td>
+                        <td>{% if task.pull_request_url %}<a href="{{ task.pull_request_url }}" target="_blank" rel="noopener">PR #{{ task.pull_request_number or "" }}</a>{% else %}—{% endif %}</td>
+                        <td>{{ task.verification_status or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty">No tasks yet. Send a signed <code>issues.labeled</code> event with the <code>devin-fix</code> label to get started.</div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>
