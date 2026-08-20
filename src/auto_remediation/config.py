@@ -5,22 +5,33 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Control plane settings loaded from environment."""
+    """Control plane settings loaded from environment variables."""
 
-    model_config = ConfigDict(env_prefix="ARP_", env_file=".env")
+    model_config = ConfigDict(env_file=".env", extra="ignore")
 
-    github_token: str = Field(default="", description="GitHub personal access token")
-    github_app_id: str | None = Field(default=None, description="GitHub App ID")
-    github_private_key: str | None = Field(default=None, description="GitHub App private key")
-    webhook_secret: str | None = Field(default=None, description="GitHub webhook secret")
-    devin_api_key: str | None = Field(default=None, description="Devin API key")
-    devin_org_id: str | None = Field(default=None, description="Devin organization ID")
-    devin_base_url: str = "https://api.devin.ai/v3"
-    devin_create_as_user_id: str | None = Field(
-        default=None, description="User ID to attribute Devin sessions to"
+    github_webhook_secret: str = Field(
+        default="",
+        description="Secret used to validate GitHub webhook HMAC signatures.",
     )
-    listen_host: str = "127.0.0.1"
-    listen_port: int = 8000
+    github_allowed_repository: str = Field(
+        default="",
+        description="Only process webhooks from this 'owner/repo' value.",
+    )
+    github_target_branch: str = Field(
+        default="main",
+        description="Target branch for generated remediation pull requests.",
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="When true, tasks are created in dry-run mode.",
+    )
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./auto_remediation.db",
+        description="Async SQLAlchemy database URL.",
+    )
+    host: str = Field(default="127.0.0.1", description="Server bind host.")
+    port: int = Field(default=8000, description="Server bind port.")
+    log_level: str = Field(default="INFO", description="Python logging level.")
 
 
 settings = Settings()

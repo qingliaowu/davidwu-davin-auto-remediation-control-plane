@@ -1,69 +1,112 @@
-# Devin Autonomous Remediation Control Plane
+# Devin Autonomous Remediation Control Plane — Phase 1
 
-An event-driven engineering control plane that converts approved GitHub issues into verified pull requests using Devin as an autonomous software engineer.
+Phase 1 implements the core webhook ingestion, eligibility policy, persistent event tracking, and durable task creation for the control plane.
 
-## Quick start
+## Technology Stack
+
+- Python 3.12
+- FastAPI
+- SQLAlchemy 2 (async) + SQLite via `aiosqlite`
+- Pydantic Settings
+- Pytest
+
+## Running the Server
 
 ```bash
-cp .env.example .env
+python -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
+
+# Required environment variables
+export GITHUB_WEBHOOK_SECRET="your-secret"
+export GITHUB_ALLOWED_REPOSITORY="owner/repo"
+
 python -m auto_remediation.main
 ```
 
-Open <http://127.0.0.1:8000/dashboard> for the dashboard and use `http://127.0.0.1:8000/webhook/github` as the GitHub webhook URL.
+The server listens on `127.0.0.1:8000` by default.
 
-## Docker
+## Endpoints
 
-Build and run with Docker Compose:
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/health` | Health check |
+| POST | `/webhooks/github` | Receive and process GitHub webhooks |
+| GET | `/tasks` | List remediation tasks |
+| GET | `/tasks/{task_id}` | Get a single remediation task |
 
-```bash
-cp .env.example .env
-# edit .env with your ARP_* values
-docker compose up --build
-```
+## Webhook Behavior
 
-The dashboard is available at <http://localhost:8000/dashboard>.
+- The raw HTTP request body is verified against `X-Hub-Signature-256` using HMAC-SHA256 and `hmac.compare_digest`.
+- Only `issues` events with `action=labeled`, `label.name=devin-fix`, `issue.state=open`, and `repository.full_name=GITHUB_ALLOWED_REPOSITORY` are eligible.
+- Eligible events create a `RemediationTask` with status `QUEUED` and return `202 Accepted`.
+- Ineligible events are recorded but return `200 OK` with an ignored reason.
+- Duplicate `X-GitHub-Delivery` values increment `attempt_count` and return `200 OK` without creating another task.
+- Invalid signatures return `401 Unauthorized`; malformed JSON returns `400 Bad Request`.
 
-## Project layout
+## Database Design
 
-- `src/auto_remediation/main.py` — FastAPI webhook receiver
-- `src/auto_remediation/control_plane.py` — issue-to-PR orchestration
-- `src/auto_remediation/devin_client.py` — async Devin v3 API client
-- `src/auto_remediation/dashboard.py` — web dashboard and `/api/events`
-- `src/auto_remediation/store.py` — in-memory event store for the dashboard
-- `src/auto_remediation/models.py` — domain models
-- `src/auto_remediation/config.py` — environment-based settings
-- `tests/` — unit tests
-- `Dockerfile` / `docker-compose.yml` — container deployment
+### `webhook_deliveries`
 
-## Web endpoints
-
-| Endpoint | Description |
+| Column | Notes |
 | --- | --- |
-| `GET /health` | Health check |
-| `POST /webhook/github` | Receive GitHub issue events (verifies `x-hub-signature-256` HMAC) |
-| `GET /dashboard` | HTML dashboard of recent dispatches |
-| `GET /api/events` | JSON feed of recent dispatches |
+| `id` | Primary key |
+| `github_delivery_id` | Unique GitHub delivery ID |
+| `event_name` | `X-GitHub-Event` header value |
+| `action` | Payload action |
+| `repository` | `owner/repo` |
+| `issue_number` | Issue number when available |
+| `outcome` | `eligible`, `ignored`, or `duplicate` |
+| `ignored_reason` | Why the event was ignored |
+| `attempt_count` | Starts at 1, increments for duplicates |
+| `received_at` | UTC timestamp |
 
-## Configuration
+### `remediation_tasks`
 
-All settings are read from environment variables with the `ARP_` prefix:
+| Column | Notes |
+| --- | --- |
+| `id` | Primary key |
+| `task_id` | Unique UUID |
+| `webhook_delivery_id` | FK to `webhook_deliveries.id` |
+| `repository` | `owner/repo` |
+| `issue_number` | Issue number |
+| `issue_title` | Issue title |
+| `issue_body` | Issue body |
+| `issue_url` | Issue URL |
+| `target_branch` | Target branch for remediation |
+| `triggering_label` | Label that triggered the task |
+| `status` | One of the defined task states |
+| `dry_run` | Boolean dry-run flag |
+| `received_at` | UTC timestamp |
+| `queued_at` | UTC timestamp when queued |
+| `error_code` | Error code on failure |
+| `error_message` | Error message on failure |
 
-- `ARP_GITHUB_TOKEN`
-- `ARP_GITHUB_APP_ID`
-- `ARP_GITHUB_PRIVATE_KEY`
-- `ARP_WEBHOOK_SECRET`
-- `ARP_DEVIN_API_KEY`
-- `ARP_DEVIN_ORG_ID`
-- `ARP_DEVIN_BASE_URL` (default: `https://api.devin.ai/v3`)
-- `ARP_DEVIN_CREATE_AS_USER_ID`
-- `ARP_LISTEN_HOST` (default: `127.0.0.1`)
-- `ARP_LISTEN_PORT`
+### Task States
+
+- `QUEUED`
+- `DISPATCHING`
+- `RUNNING`
+- `WAITING_FOR_USER`
+- `WAITING_FOR_APPROVAL`
+- `SUCCEEDED`
+- `FAILED`
+
+## Signature Verification
+
+1. Read the raw request body before JSON parsing.
+2. Read the `X-Hub-Signature-256` header.
+3. Compute `HMAC-SHA256(secret, body).hexdigest()`.
+4. Compare using `hmac.compare_digest` to prevent timing attacks.
+
+## Idempotency
+
+The `github_delivery_id` from the `X-GitHub-Delivery` header has a unique database constraint. The first delivery inserts a `WebhookDelivery` row and, if eligible, creates one `RemediationTask`. Subsequent deliveries with the same ID increment `attempt_count` and return a `duplicate` response without creating a new task.
 
 ## Development
 
 ```bash
 ruff check src tests
 ruff format --check src tests
-pytest
+pytest -q
 ```

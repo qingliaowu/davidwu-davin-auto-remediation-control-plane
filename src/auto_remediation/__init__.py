@@ -1,3 +1,1 @@
-"""Devin Autonomous Remediation Control Plane."""
-
-__version__ = "0.1.0"
+"""Auto-remediation control plane package."""

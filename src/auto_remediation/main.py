@@ -1,81 +1,91 @@
-"""HTTP entry point for GitHub webhooks and health checks."""
+"""HTTP entry point for the auto-remediation control plane."""
 
-import hashlib
-import hmac
+from __future__ import annotations
+
+import json
 import logging
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator
 
-from fastapi import FastAPI, HTTPException, Request
+import uvicorn
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auto_remediation.config import settings
-from auto_remediation.control_plane import ControlPlane
-from auto_remediation.dashboard import router as dashboard_router
-from auto_remediation.devin_client import DevinClientError
-from auto_remediation.models import GitHubIssueEvent, RemediationRequest
-from auto_remediation.store import store
+from auto_remediation.database import db, get_db
+from auto_remediation.services import (
+    get_task,
+    handle_github_event,
+    list_tasks,
+    verify_signature,
+)
 
-logger = logging.getLogger(__name__)
-app = FastAPI(title="Auto Remediation Control Plane", version="0.1.0")
-app.include_router(dashboard_router)
-control_plane = ControlPlane()
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 
-def _verify_github_signature(secret: str | None, body: bytes, signature: str | None) -> bool:
-    """Verify a GitHub webhook HMAC-SHA256 signature."""
-    if not secret:
-        return True
-    if not signature or not signature.startswith("sha256="):
-        return False
-    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Create database tables on startup."""
+    await db.setup()
+    yield
+
+
+app = FastAPI(
+    title="Auto Remediation Control Plane",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 
 @app.get("/health")
-async def health() -> dict:
+async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
 
 
-@app.post("/webhook/github")
-async def github_webhook(request: Request) -> dict:
-    """Receive GitHub issue events and route approved issues to Devin."""
-    body = await request.body()
-    signature = request.headers.get("x-hub-signature-256")
+@app.post("/webhooks/github")
+async def github_webhook(request: Request, session: AsyncSession = Depends(get_db)) -> JSONResponse:
+    """Receive and process verified GitHub issue events."""
+    secret = settings.github_webhook_secret
+    if not secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
 
-    if not _verify_github_signature(settings.webhook_secret, body, signature):
+    signature = request.headers.get("x-hub-signature-256")
+    body = await request.body()
+    if not verify_signature(body, secret, signature):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    if not settings.webhook_secret:
-        logger.warning("ARP_WEBHOOK_SECRET is not set; accepting unsigned webhooks")
-
-    payload = GitHubIssueEvent.model_validate_json(body)
-    if payload.action not in {"opened", "labeled", "edited"}:
-        return {"status": "ignored", "action": payload.action}
-
-    owner, repo = payload.repository.get("full_name", "/").split("/", 1)
-    issue = payload.issue
-    remediation = RemediationRequest(
-        owner=owner,
-        repo=repo,
-        issue_number=issue.get("number", 0),
-        title=issue.get("title", ""),
-        body=issue.get("body"),
-    )
-
     try:
-        result = await control_plane.handle_issue(remediation)
-    except DevinClientError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Malformed JSON") from exc
 
-    await store.record(result.model_dump())
-    return result.model_dump()
+    event_name = request.headers.get("x-github-event")
+    delivery_id = request.headers.get("x-github-delivery")
+
+    result = await handle_github_event(session, event_name, delivery_id, payload)
+    return JSONResponse(content=result.body, status_code=result.status_code)
 
 
-def start() -> None:
-    """Run the control plane server."""
-    import uvicorn
+@app.get("/tasks")
+async def tasks(session: AsyncSession = Depends(get_db)) -> dict[str, list[dict[str, Any]]]:
+    """List all remediation tasks."""
+    tasks = await list_tasks(session)
+    return {"tasks": [task.to_dict() for task in tasks]}
 
-    uvicorn.run(app, host=settings.listen_host, port=settings.listen_port)
+
+@app.get("/tasks/{task_id}")
+async def task_detail(task_id: str, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Fetch a single remediation task by task_id."""
+    task = await get_task(session, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task.to_dict()
 
 
 if __name__ == "__main__":
-    start()
+    uvicorn.run(app, host=settings.host, port=settings.port)
