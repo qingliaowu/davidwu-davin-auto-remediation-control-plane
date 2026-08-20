@@ -5,16 +5,19 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncGenerator
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auto_remediation.config import settings
 from auto_remediation.database import db, get_db
 from auto_remediation.devin_client import DevinClient
+from auto_remediation.metrics import get_metrics
 from auto_remediation.services import (
     get_task,
     handle_github_event,
@@ -27,6 +30,9 @@ logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 
 @asynccontextmanager
@@ -59,6 +65,41 @@ app = FastAPI(
 async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics(session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Return aggregate observability metrics."""
+    return await get_metrics(session)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, session: AsyncSession = Depends(get_db)) -> Any:
+    """Render the server-side dashboard overview."""
+    metrics = await get_metrics(session)
+    tasks = await list_tasks(session)
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {"metrics": metrics, "tasks": tasks},
+    )
+
+
+@app.get("/dashboard/tasks/{task_id}", response_class=HTMLResponse)
+async def dashboard_task(
+    request: Request,
+    task_id: str,
+    session: AsyncSession = Depends(get_db),
+) -> Any:
+    """Render a detailed server-side task view."""
+    task = await get_task(session, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return templates.TemplateResponse(
+        request,
+        "task_detail.html",
+        {"task": task},
+    )
 
 
 @app.post("/webhooks/github")

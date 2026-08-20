@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task {{ task.task_id[:8] }} — Auto Remediation Control Plane</title>
+    <style>
+        :root {
+            --bg: #f5f7fa;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --accent: #2563eb;
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --border: #e5e7eb;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        header {
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        header h1 { margin: 0; font-size: 1.25rem; }
+        .back { color: var(--accent); text-decoration: none; }
+        main { max-width: 900px; margin: 0 auto; padding: 2rem; }
+        section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        h2 { margin-top: 0; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+        dl { display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem 1rem; }
+        dt { color: var(--muted); font-size: 0.875rem; }
+        dd { margin: 0; font-weight: 500; }
+        a { color: var(--accent); text-decoration: none; word-break: break-all; }
+        a:hover { text-decoration: underline; }
+        .badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .badge.dry-run { background: #fef3c7; color: #92400e; }
+        .badge.QUEUED, .badge.DISPATCHING { background: #dbeafe; color: #1e40af; }
+        .badge.RUNNING { background: #e0e7ff; color: #3730a3; }
+        .badge.WAITING_FOR_USER, .badge.WAITING_FOR_APPROVAL { background: #fef3c7; color: #92400e; }
+        .badge.SUCCEEDED { background: #dcfce7; color: #166534; }
+        .badge.FAILED { background: #fee2e2; color: #991b1b; }
+        .timeline { list-style: none; padding: 0; margin: 0; }
+        .timeline li { padding: 0.5rem 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+        .timeline li:last-child { border-bottom: none; }
+        .timeline time { color: var(--muted); font-size: 0.875rem; }
+        pre {
+            background: #f3f4f6;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            padding: 1rem;
+            overflow-x: auto;
+            font-size: 0.875rem;
+        }
+        .verification-grid { display: grid; gap: 1rem; }
+        .verification-item { padding: 1rem; border: 1px solid var(--border); border-radius: 0.375rem; }
+        .verification-item.passed { border-left: 4px solid var(--success); }
+        .verification-item.failed { border-left: 4px solid var(--danger); }
+        .verification-item.not_run { border-left: 4px solid var(--muted); }
+        .verification-item h4 { margin: 0 0 0.5rem; }
+        .verification-item code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        .muted { color: var(--muted); }
+        .error { background: #fee2e2; color: #991b1b; padding: 1rem; border-radius: 0.375rem; }
+        ul.files { margin: 0; padding-left: 1.25rem; }
+        ul.files li { margin: 0.25rem 0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Task {{ task.task_id[:8] }}</h1>
+        <a class="back" href="/dashboard">← Back to dashboard</a>
+    </header>
+    <main>
+        <section>
+            <h2>GitHub Issue</h2>
+            <dl>
+                <dt>Issue</dt>
+                <dd>#{{ task.issue_number }} {{ task.issue_title or "—" }}</dd>
+                <dt>Repository</dt>
+                <dd>{{ task.repository }}</dd>
+                <dt>Issue URL</dt>
+                <dd>{% if task.issue_url %}<a href="{{ task.issue_url }}" target="_blank" rel="noopener">{{ task.issue_url }}</a>{% else %}—{% endif %}</dd>
+                <dt>Target Branch</dt>
+                <dd>{{ task.target_branch }}</dd>
+                <dt>Delivery ID</dt>
+                <dd>{{ task.webhook_delivery.github_delivery_id if task.webhook_delivery else "—" }}</dd>
+                <dt>Dry Run</dt>
+                <dd>{% if task.dry_run %}<span class="badge dry-run">DRY RUN</span>{% else %}No{% endif %}</dd>
+            </dl>
+        </section>
+
+        <section>
+            <h2>State Timeline</h2>
+            <ul class="timeline">
+                <li><span>Received</span><time>{{ task.received_at }}</time></li>
+                {% if task.session_started_at %}<li><span>Session Started</span><time>{{ task.session_started_at }}</time></li>{% endif %}
+                {% if task.completed_at %}<li><span>Completed</span><time>{{ task.completed_at }}</time></li>{% endif %}
+                <li><span>Current Status</span><span><span class="badge {{ task.status }}">{{ task.status }}</span></span></li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Devin Session</h2>
+            <dl>
+                <dt>Devin Status</dt>
+                <dd>{{ task.devin_status or "—" }}</dd>
+                <dt>Status Detail</dt>
+                <dd>{{ task.devin_status_detail or "—" }}</dd>
+                <dt>Session Link</dt>
+                <dd>{% if task.devin_session_url %}<a href="{{ task.devin_session_url }}" target="_blank" rel="noopener">{{ task.devin_session_url }}</a>{% else %}—{% endif %}</dd>
+                <dt>ACUs Consumed</dt>
+                <dd>{{ "%.2f"|format(task.acus_consumed) if task.acus_consumed is not none else "—" }}</dd>
+            </dl>
+        </section>
+
+        <section>
+            <h2>Pull Request</h2>
+            <dl>
+                <dt>PR URL</dt>
+                <dd>{% if task.pull_request_url %}<a href="{{ task.pull_request_url }}" target="_blank" rel="noopener">{{ task.pull_request_url }}</a>{% else %}—{% endif %}</dd>
+                <dt>PR Number</dt>
+                <dd>{{ task.pull_request_number or "—" }}</dd>
+                <dt>Verification Status</dt>
+                <dd>{{ task.verification_status or "—" }}</dd>
+            </dl>
+            {% if task.structured_output and task.structured_output.changed_files %}
+            <h3>Changed Files</h3>
+            <ul class="files">
+                {% for f in task.structured_output.changed_files %}
+                <li>{{ f }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </section>
+
+        {% if task.structured_output and task.structured_output.verification %}
+        <section>
+            <h2>Verification Results</h2>
+            <div class="verification-grid">
+                {% for v in task.structured_output.verification %}
+                <div class="verification-item {{ v.result }}">
+                    <h4>{{ v.result|upper }}</h4>
+                    <p><strong>Command:</strong> <code>{{ v.command }}</code></p>
+                    <p><strong>Exit Code:</strong> {{ v.exit_code if v.exit_code is not none else "—" }}</p>
+                    <p><strong>Notes:</strong> {{ v.notes or "—" }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if task.structured_output %}
+        <section>
+            <h2>Structured Output</h2>
+            <pre>{{ task.structured_output | tojson(indent=2) }}</pre>
+        </section>
+        {% endif %}
+
+        {% if task.error_code %}
+        <section>
+            <h2>Error Information</h2>
+            <div class="error">
+                <p><strong>{{ task.error_code }}</strong></p>
+                <p>{{ task.error_message or "" }}</p>
+            </div>
+        </section>
+        {% endif %}
+    </main>
+</body>
+</html>

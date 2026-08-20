@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from auto_remediation.config import settings
 from auto_remediation.models import RemediationTask, WebhookDelivery
@@ -184,4 +185,8 @@ async def list_tasks(session: AsyncSession) -> list[RemediationTask]:
 
 async def get_task(session: AsyncSession, task_id: str) -> RemediationTask | None:
     """Fetch a single remediation task by its public task_id."""
-    return await session.scalar(select(RemediationTask).where(RemediationTask.task_id == task_id))
+    return await session.scalar(
+        select(RemediationTask)
+        .where(RemediationTask.task_id == task_id)
+        .options(selectinload(RemediationTask.webhook_delivery)),
+    )
