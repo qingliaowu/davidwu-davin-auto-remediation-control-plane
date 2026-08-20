@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 
 from auto_remediation.database import Database
+from auto_remediation.devin_client import DevinClient
 from auto_remediation.main import app
 
 
@@ -28,3 +31,32 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) ->
 
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest_asyncio.fixture
+async def test_database(tmp_path: pytest.TempPathFactory) -> AsyncGenerator[Database, None]:
+    """Provide an isolated in-memory async database."""
+    db = Database(f"sqlite+aiosqlite:///{tmp_path}/test.db")
+    await db.setup()
+    try:
+        yield db
+    finally:
+        await db.engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(test_database: Database) -> AsyncGenerator:
+    """Provide an async SQLAlchemy session."""
+    async with test_database.get_session() as session:
+        yield session
+
+
+@pytest.fixture
+def devin_client() -> DevinClient:
+    """Provide a Devin client configured for unit tests."""
+    return DevinClient(
+        base_url="https://api.devin.ai",
+        api_key="test-api-key",
+        org_id="test-org",
+        dry_run=False,
+    )

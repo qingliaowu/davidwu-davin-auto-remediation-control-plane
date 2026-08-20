@@ -138,7 +138,7 @@ async def handle_github_event(
             target_branch=settings.github_target_branch,
             triggering_label="devin-fix",
             status="QUEUED",
-            dry_run=settings.dry_run,
+            dry_run=settings.devin_dry_run,
             received_at=now,
             queued_at=now,
         )

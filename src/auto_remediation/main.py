@@ -14,12 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auto_remediation.config import settings
 from auto_remediation.database import db, get_db
+from auto_remediation.devin_client import DevinClient
 from auto_remediation.services import (
     get_task,
     handle_github_event,
     list_tasks,
     verify_signature,
 )
+from auto_remediation.worker import Worker
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -29,9 +31,21 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Create database tables on startup."""
+    """Create database tables and start the background worker when configured."""
     await db.setup()
+
+    worker_enabled = bool(settings.devin_api_key) or settings.devin_dry_run
+    if worker_enabled:
+        app.state.worker = Worker(db, DevinClient())
+        await app.state.worker.start()
+    else:
+        logging.warning("Background worker not started: set DEVIN_API_KEY or DEVIN_DRY_RUN=true")
+
     yield
+
+    worker = getattr(app.state, "worker", None)
+    if worker:
+        await worker.stop()
 
 
 app = FastAPI(
