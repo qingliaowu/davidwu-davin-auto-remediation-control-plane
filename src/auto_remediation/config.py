@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     github_private_key: str | None = Field(default=None, description="GitHub App private key")
     webhook_secret: str | None = Field(default=None, description="GitHub webhook secret")
     devin_api_key: str | None = Field(default=None, description="Devin API key")
+    devin_org_id: str | None = Field(default=None, description="Devin organization ID")
+    devin_base_url: str = "https://api.devin.ai/v3"
+    devin_create_as_user_id: str | None = Field(
+        default=None, description="User ID to attribute Devin sessions to"
+    )
     listen_host: str = "0.0.0.0"
     listen_port: int = 8000
 

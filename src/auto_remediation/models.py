@@ -19,3 +19,15 @@ class RemediationRequest(BaseModel):
     issue_number: int
     title: str
     body: str | None = None
+
+
+class RemediationResponse(BaseModel):
+    """Result of dispatching a remediation request to Devin."""
+
+    status: str
+    owner: str
+    repo: str
+    issue_number: int
+    session_id: str | None = None
+    session_url: str | None = None
+    devin_status: str | None = None

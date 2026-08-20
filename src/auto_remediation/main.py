@@ -1,9 +1,10 @@
 """HTTP entry point for GitHub webhooks and health checks."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from auto_remediation.config import settings
 from auto_remediation.control_plane import ControlPlane
+from auto_remediation.devin_client import DevinClientError
 from auto_remediation.models import GitHubIssueEvent, RemediationRequest
 
 app = FastAPI(title="Auto Remediation Control Plane", version="0.1.0")
@@ -32,7 +33,12 @@ async def github_webhook(payload: GitHubIssueEvent) -> dict:
         body=issue.get("body"),
     )
 
-    return await control_plane.handle_issue(request)
+    try:
+        result = await control_plane.handle_issue(request)
+    except DevinClientError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return result.model_dump()
 
 
 def start() -> None:
