@@ -28,6 +28,7 @@ class RemediationResponse(BaseModel):
     owner: str
     repo: str
     issue_number: int
+    title: str
     session_id: str | None = None
     session_url: str | None = None
     devin_status: str | None = None

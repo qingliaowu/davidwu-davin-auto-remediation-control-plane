@@ -10,11 +10,25 @@ from auto_remediation.store import store
 
 
 def test_dashboard_renders() -> None:
-    """Dashboard endpoint returns HTML."""
+    """Dashboard endpoint returns HTML and renders event titles."""
+    store._events.clear()
+    store._events.append(
+        {
+            "status": "dispatched",
+            "owner": "owner",
+            "repo": "repo",
+            "issue_number": 42,
+            "title": "Fix login",
+            "session_id": "devin-123",
+            "session_url": "https://app.devin.ai/sessions/devin-123",
+        },
+    )
     client = TestClient(app)
     response = client.get("/dashboard")
     assert response.status_code == 200
     assert "Auto Remediation Control Plane" in response.text
+    assert "#42 Fix login" in response.text
+    assert 'href="https://app.devin.ai/sessions/devin-123"' in response.text
 
 
 def test_api_events_lists_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:

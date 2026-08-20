@@ -84,5 +84,6 @@ def test_github_webhook_dispatches_to_devin(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "dispatched"
+    assert data["title"] == "Fix login"
     assert data["session_id"] == "devin-abc"
     assert data["session_url"] == "https://app.devin.ai/sessions/devin-abc"

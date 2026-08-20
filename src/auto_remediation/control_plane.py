@@ -56,6 +56,7 @@ class ControlPlane:
             owner=request.owner,
             repo=request.repo,
             issue_number=request.issue_number,
+            title=request.title,
             session_id=session.get("session_id"),
             session_url=session.get("url"),
             devin_status=session.get("status"),
