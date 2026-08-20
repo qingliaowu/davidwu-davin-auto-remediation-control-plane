@@ -1,13 +1,13 @@
 """Application configuration."""
 
-from pydantic import ConfigDict, Field
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Control plane settings loaded from environment variables."""
 
-    model_config = ConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     github_webhook_secret: str = Field(
         default="",
