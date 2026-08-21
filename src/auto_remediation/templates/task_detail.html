@@ -165,15 +165,14 @@
             {% endif %}
         </section>
 
-        {% if task.structured_output and task.structured_output.verification %}
+        {% if task.verification_items %}
         <section>
             <h2>Verification Results</h2>
             <div class="verification-grid">
-                {% for v in task.structured_output.verification %}
-                {% set normalized = task.verification_items[loop.index0] %}
+                {% for v in task.verification_items %}
                 <div class="verification-item {{ v.result }}">
                     <h4>{{ v.result|upper }}</h4>
-                    <p><strong>{{ "Required" if normalized.required else "Supplemental" }}</strong></p>
+                    <p><strong>{{ "Required" if v.required else "Supplemental" }}</strong></p>
                     <p><strong>Command:</strong> <code>{{ v.command }}</code></p>
                     <p><strong>Exit Code:</strong> {{ v.exit_code if v.exit_code is not none else "—" }}</p>
                     <p><strong>Notes:</strong> {{ v.notes or "—" }}</p>

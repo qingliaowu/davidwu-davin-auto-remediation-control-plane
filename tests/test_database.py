@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from sqlalchemy import inspect, text
 
 from auto_remediation.database import Database
 
 
-async def test_setup_adds_columns_missing_from_existing_tasks_table(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_setup_adds_columns_missing_from_existing_tasks_table(tmp_path: Path) -> None:
     """Database setup adds newly introduced task columns without dropping data."""
     database = Database(f"sqlite+aiosqlite:///{tmp_path}/migration.db")
     await database.setup()

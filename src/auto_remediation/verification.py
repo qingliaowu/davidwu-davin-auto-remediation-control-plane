@@ -28,13 +28,27 @@ def normalized_verification(
     if not isinstance(verification, list):
         return []
 
+    items = [item for item in verification if isinstance(item, dict)]
+    has_explicit_required = any("required" in item for item in items)
     normalized: list[dict[str, Any]] = []
-    for item in verification:
-        if isinstance(item, dict):
-            normalized.append(
-                {
-                    **item,
-                    "required": is_required_verification(issue_body, item),
-                },
-            )
+    for item in items:
+        normalized.append(
+            {
+                **item,
+                "required": is_required_verification(issue_body, item),
+            },
+        )
+
+    if (
+        normalized
+        and not has_explicit_required
+        and not any(item["required"] for item in normalized)
+    ):
+        normalized = [
+            {
+                **item,
+                "required": True,
+            }
+            for item in normalized
+        ]
     return normalized

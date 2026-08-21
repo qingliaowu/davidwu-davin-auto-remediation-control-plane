@@ -79,7 +79,10 @@ class Worker:
                 ),
             )
             for task in non_terminal:
-                if task.structured_output is not None:
+                if task.structured_output is not None and (
+                    task.status in _TERMINAL_STATUSES
+                    or self._has_completion_evidence(task, task.structured_output)
+                ):
                     await self._finalize_task(
                         session,
                         task,
@@ -194,8 +197,10 @@ class Worker:
             if pr_number:
                 task.pull_request_number = pr_number
 
-        task.completed_at = self._now()
-        task.duration_seconds = self._compute_duration(task)
+        if task.completed_at is None:
+            task.completed_at = self._now()
+        if task.duration_seconds is None:
+            task.duration_seconds = self._compute_duration(task)
 
         if final_status == "FAILED":
             if structured and structured.get("outcome") == "failed":
@@ -245,12 +250,6 @@ class Worker:
 
         if outcome == "failed" or required_failed:
             return "FAILED", "failed", "FAILED", warnings
-
-        if not verification:
-            return "FAILED", "not_run", "FAILED", warnings
-
-        if not required_passed:
-            return "FAILED", verification_status, "FAILED", warnings
 
         return "FAILED", verification_status, "FAILED", warnings
 

@@ -345,6 +345,40 @@ async def test_explicit_required_flags_override_issue_body_heuristic(
 
 
 @pytest.mark.asyncio
+async def test_legacy_verification_falls_back_to_required_when_heuristic_matches_none(
+    test_database: Database,
+) -> None:
+    """Legacy evidence with no required heuristic matches treats every item as required."""
+    session_id = "sess-legacy-required-fallback"
+    structured = _success_structured_output()
+    structured["verification"][0]["result"] = "failed"
+    structured["verification"][0]["notes"] = "The check failed."
+    fake_client = FakeDevinClient(
+        [
+            {
+                "status": "exit",
+                "session_id": session_id,
+                "structured_output": structured,
+            },
+        ],
+    )
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+    async with test_database.get_session() as session:
+        task = (await session.execute(select(RemediationTask))).scalar_one()
+        task.issue_body = "Fix the issue without verification commands."
+        await session.commit()
+
+    await worker.poll()
+
+    task = await _get_task(test_database)
+    assert task.status == "FAILED"
+    assert task.verification_status == "failed"
+    assert task.verification_summary == "FAILED"
+    assert task.error_code == "verification_failed"
+
+
+@pytest.mark.asyncio
 async def test_suspended_with_valid_success_evidence(test_database: Database) -> None:
     """A suspended status with valid success evidence still marks SUCCEEDED."""
     session_id = "sess-suspended-success"
@@ -376,11 +410,14 @@ async def test_recover_reclassifies_persisted_structured_output_without_api_call
     fake_client = FakeDevinClient([])
     worker = Worker(test_database, fake_client)
     await _create_running_task(test_database, session_id)
+    expected_completed_at = datetime(2020, 1, 2, 3, 4, 5, tzinfo=UTC)
 
     async with test_database.get_session() as session:
         task = (await session.execute(select(RemediationTask))).scalar_one()
         task.status = "FAILED"
         task.structured_output = _success_structured_output()
+        task.completed_at = expected_completed_at
+        task.duration_seconds = 123.0
         await session.commit()
 
     await worker.recover()
@@ -389,4 +426,32 @@ async def test_recover_reclassifies_persisted_structured_output_without_api_call
     assert task.status == "SUCCEEDED"
     assert task.verification_summary == "PASSED"
     assert task.error_code is None
+    assert fake_client.calls == []
+    assert task.completed_at.replace(tzinfo=UTC) == expected_completed_at
+    assert task.duration_seconds == 123.0
+
+
+@pytest.mark.asyncio
+async def test_recover_leaves_partial_structured_output_for_poll(
+    test_database: Database,
+) -> None:
+    """Recovery does not finalize structured output lacking complete evidence."""
+    session_id = "sess-recover-partial-evidence"
+    fake_client = FakeDevinClient([])
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+
+    structured = _success_structured_output()
+    structured["verification"][0]["result"] = "not_run"
+    async with test_database.get_session() as session:
+        task = (await session.execute(select(RemediationTask))).scalar_one()
+        task.structured_output = structured
+        await session.commit()
+
+    await worker.recover()
+
+    task = await _get_task(test_database)
+    assert task.status == "RUNNING"
+    assert task.completed_at is None
+    assert task.verification_summary is None
     assert fake_client.calls == []
