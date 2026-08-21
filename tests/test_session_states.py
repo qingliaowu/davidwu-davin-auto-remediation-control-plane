@@ -69,7 +69,7 @@ async def _create_running_task(database: Database, session_id: str = "sess-42") 
             repository="qingliaowu/superset",
             issue_number=42,
             issue_title="Fix login",
-            issue_body="Users cannot log in.",
+            issue_body="Users cannot log in.\nVerification command: pytest",
             issue_url="https://github.com/qingliaowu/superset/issues/42",
             target_branch="main",
             triggering_label="devin-fix",
@@ -117,6 +117,108 @@ async def test_waiting_for_approval(test_database: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_running_status_detail_waiting_for_user(test_database: Database) -> None:
+    """A waiting status detail takes precedence over a running lifecycle status."""
+    session_id = "sess-detail-wait-user"
+    fake_client = FakeDevinClient(
+        [{"status": "running", "status_detail": "waiting_for_user", "session_id": session_id}],
+    )
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+
+    await worker.poll()
+
+    task = await _get_task(test_database)
+    assert task.status == "WAITING_FOR_USER"
+    assert task.devin_status == "running"
+    assert task.devin_status_detail == "waiting_for_user"
+
+
+@pytest.mark.asyncio
+async def test_running_status_detail_waiting_for_approval(test_database: Database) -> None:
+    """A waiting-for-approval detail takes precedence over a running status."""
+    session_id = "sess-detail-wait-approval"
+    fake_client = FakeDevinClient(
+        [
+            {
+                "status": "running",
+                "status_detail": "waiting_for_approval",
+                "session_id": session_id,
+            },
+        ],
+    )
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+
+    await worker.poll()
+
+    task = await _get_task(test_database)
+    assert task.status == "WAITING_FOR_APPROVAL"
+    assert task.devin_status_detail == "waiting_for_approval"
+
+
+@pytest.mark.asyncio
+async def test_running_status_with_success_evidence_and_supplemental_warning(
+    test_database: Database,
+) -> None:
+    """Complete evidence finalizes a running session with supplemental warnings."""
+    session_id = "sess-evidence-warning"
+    structured = _success_structured_output()
+    structured["verification"] = [
+        {
+            "command": "ruff check --select RUF012 superset/charts/data/api.py",
+            "exit_code": 0,
+            "result": "passed",
+            "notes": "Ruff passed.",
+        },
+        {
+            "command": "pre-commit run",
+            "exit_code": 1,
+            "result": "failed",
+            "notes": "Known repository-wide mypy failures.",
+        },
+    ]
+    fake_client = FakeDevinClient(
+        [
+            {
+                "status": "running",
+                "status_detail": "waiting_for_user",
+                "session_id": session_id,
+                "structured_output": structured,
+            },
+        ],
+    )
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+    async with test_database.get_session() as session:
+        task = (await session.execute(select(RemediationTask))).scalar_one()
+        task.issue_body = (
+            "Fix the issue.\nRun `ruff check --select RUF012 superset/charts/data/api.py`."
+        )
+        await session.commit()
+
+    await worker.poll()
+
+    task = await _get_task(test_database)
+    assert task.status == "SUCCEEDED"
+    assert task.devin_status == "running"
+    assert task.devin_status_detail == "waiting_for_user"
+    assert task.verification_status == "passed"
+    assert task.verification_summary == "PASSED_WITH_WARNINGS"
+    assert task.verification_warnings == [
+        {
+            "command": "pre-commit run",
+            "exit_code": 1,
+            "result": "failed",
+            "notes": "Known repository-wide mypy failures.",
+        },
+    ]
+    assert task.pull_request_url == "https://github.com/qingliaowu/superset/pull/1"
+    assert task.pull_request_number == 1
+    assert task.error_code is None
+
+
+@pytest.mark.asyncio
 async def test_successful_completion(test_database: Database) -> None:
     """A terminal Devin status with success evidence marks the task SUCCEEDED."""
     session_id = "sess-success"
@@ -139,6 +241,7 @@ async def test_successful_completion(test_database: Database) -> None:
     assert task.pull_request_url == "https://github.com/qingliaowu/superset/pull/1"
     assert task.pull_request_number == 1
     assert task.verification_status == "passed"
+    assert task.verification_summary == "PASSED"
     assert task.structured_output is not None
     assert task.structured_output["outcome"] == "success"
 
@@ -163,6 +266,7 @@ async def test_completion_without_pull_request(test_database: Database) -> None:
 
     task = await _get_task(test_database)
     assert task.status == "FAILED"
+    assert task.verification_summary == "FAILED"
     assert task.error_code == "no_pull_request"
     assert task.pull_request_url is None
 
@@ -191,6 +295,86 @@ async def test_failed_verification(test_database: Database) -> None:
     task = await _get_task(test_database)
     assert task.status == "FAILED"
     assert task.verification_status == "failed"
+    assert task.verification_summary == "FAILED"
+    assert task.error_code == "verification_failed"
+
+
+@pytest.mark.asyncio
+async def test_explicit_required_flags_override_issue_body_heuristic(
+    test_database: Database,
+) -> None:
+    """Explicit required flags override command matching against the issue body."""
+    session_id = "sess-explicit-required"
+    structured = _success_structured_output()
+    structured["verification"] = [
+        {
+            "command": "pytest",
+            "exit_code": 1,
+            "result": "failed",
+            "notes": "Supplemental check failed.",
+            "required": False,
+        },
+        {
+            "command": "lint",
+            "exit_code": 0,
+            "result": "passed",
+            "notes": "Required check passed.",
+            "required": True,
+        },
+    ]
+    fake_client = FakeDevinClient(
+        [
+            {
+                "status": "exit",
+                "session_id": session_id,
+                "structured_output": structured,
+            },
+        ],
+    )
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+
+    await worker.poll()
+
+    task = await _get_task(test_database)
+    assert task.status == "SUCCEEDED"
+    assert task.verification_status == "passed"
+    assert task.verification_summary == "PASSED_WITH_WARNINGS"
+    assert task.verification_warnings is not None
+    assert task.verification_warnings[0]["command"] == "pytest"
+
+
+@pytest.mark.asyncio
+async def test_legacy_verification_falls_back_to_required_when_heuristic_matches_none(
+    test_database: Database,
+) -> None:
+    """Legacy evidence with no required heuristic matches treats every item as required."""
+    session_id = "sess-legacy-required-fallback"
+    structured = _success_structured_output()
+    structured["verification"][0]["result"] = "failed"
+    structured["verification"][0]["notes"] = "The check failed."
+    fake_client = FakeDevinClient(
+        [
+            {
+                "status": "exit",
+                "session_id": session_id,
+                "structured_output": structured,
+            },
+        ],
+    )
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+    async with test_database.get_session() as session:
+        task = (await session.execute(select(RemediationTask))).scalar_one()
+        task.issue_body = "Fix the issue without verification commands."
+        await session.commit()
+
+    await worker.poll()
+
+    task = await _get_task(test_database)
+    assert task.status == "FAILED"
+    assert task.verification_status == "failed"
+    assert task.verification_summary == "FAILED"
     assert task.error_code == "verification_failed"
 
 
@@ -215,3 +399,59 @@ async def test_suspended_with_valid_success_evidence(test_database: Database) ->
     task = await _get_task(test_database)
     assert task.status == "SUCCEEDED"
     assert task.devin_status == "suspended"
+
+
+@pytest.mark.asyncio
+async def test_recover_reclassifies_persisted_structured_output_without_api_call(
+    test_database: Database,
+) -> None:
+    """Recovery reclassifies stored evidence without polling Devin."""
+    session_id = "sess-recover-evidence"
+    fake_client = FakeDevinClient([])
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+    expected_completed_at = datetime(2020, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    async with test_database.get_session() as session:
+        task = (await session.execute(select(RemediationTask))).scalar_one()
+        task.status = "FAILED"
+        task.structured_output = _success_structured_output()
+        task.completed_at = expected_completed_at
+        task.duration_seconds = 123.0
+        await session.commit()
+
+    await worker.recover()
+
+    task = await _get_task(test_database)
+    assert task.status == "SUCCEEDED"
+    assert task.verification_summary == "PASSED"
+    assert task.error_code is None
+    assert fake_client.calls == []
+    assert task.completed_at.replace(tzinfo=UTC) == expected_completed_at
+    assert task.duration_seconds == 123.0
+
+
+@pytest.mark.asyncio
+async def test_recover_leaves_partial_structured_output_for_poll(
+    test_database: Database,
+) -> None:
+    """Recovery does not finalize structured output lacking complete evidence."""
+    session_id = "sess-recover-partial-evidence"
+    fake_client = FakeDevinClient([])
+    worker = Worker(test_database, fake_client)
+    await _create_running_task(test_database, session_id)
+
+    structured = _success_structured_output()
+    structured["verification"][0]["result"] = "not_run"
+    async with test_database.get_session() as session:
+        task = (await session.execute(select(RemediationTask))).scalar_one()
+        task.structured_output = structured
+        await session.commit()
+
+    await worker.recover()
+
+    task = await _get_task(test_database)
+    assert task.status == "RUNNING"
+    assert task.completed_at is None
+    assert task.verification_summary is None
+    assert fake_client.calls == []

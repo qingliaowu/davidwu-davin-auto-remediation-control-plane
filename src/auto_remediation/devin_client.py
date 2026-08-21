@@ -43,12 +43,13 @@ STRUCTURED_OUTPUT_SCHEMA: dict[str, Any] = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["command", "exit_code", "result", "notes"],
+                "required": ["command", "exit_code", "result", "notes", "required"],
                 "properties": {
                     "command": {"type": "string"},
                     "exit_code": {"type": ["integer", "null"]},
                     "result": {"type": "string", "enum": ["passed", "failed", "not_run"]},
                     "notes": {"type": "string"},
+                    "required": {"type": "boolean"},
                 },
             },
         },
@@ -192,6 +193,7 @@ class DevinClient:
                         "exit_code": 0,
                         "result": "passed",
                         "notes": "All tests passed in dry-run mode.",
+                        "required": True,
                     },
                 ],
                 "blockers": [],

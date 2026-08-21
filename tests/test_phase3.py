@@ -81,6 +81,7 @@ async def test_metrics_calculations(db_session) -> None:
         pr_url="https://github.com/pr/1",
         session_id="s1",
     )
+    t1.verification_summary = "PASSED_WITH_WARNINGS"
     t2 = _make_task(d2, "FAILED", duration=60.0, session_id="s2")
     t3 = _make_task(d3, "RUNNING", session_id="s3")
     t4 = _make_task(d4, "WAITING_FOR_USER", session_id="s4")
@@ -99,6 +100,7 @@ async def test_metrics_calculations(db_session) -> None:
     assert metrics["waiting_tasks"] == 1
     assert metrics["successful_tasks"] == 1
     assert metrics["failed_tasks"] == 1
+    assert metrics["tasks_with_warnings"] == 1
     assert metrics["pull_requests_created"] == 1
     assert metrics["success_rate"] == 0.5
     assert metrics["success_rate_percent"] == 50.0

@@ -43,6 +43,11 @@ async def get_metrics(session: AsyncSession) -> dict[str, Any]:
     failed_tasks = await session.scalar(
         select(func.count(RemediationTask.id)).where(RemediationTask.status == "FAILED"),
     )
+    tasks_with_warnings = await session.scalar(
+        select(func.count(RemediationTask.id)).where(
+            RemediationTask.verification_summary == "PASSED_WITH_WARNINGS",
+        ),
+    )
     pull_requests_created = await session.scalar(
         select(func.count(RemediationTask.id)).where(RemediationTask.pull_request_url.isnot(None)),
     )
@@ -70,6 +75,7 @@ async def get_metrics(session: AsyncSession) -> dict[str, Any]:
         "waiting_tasks": waiting_tasks or 0,
         "successful_tasks": successful_tasks or 0,
         "failed_tasks": failed_tasks or 0,
+        "tasks_with_warnings": tasks_with_warnings or 0,
         "pull_requests_created": pull_requests_created or 0,
         "success_rate": success_rate,
         "success_rate_percent": round(success_rate * 100, 1),

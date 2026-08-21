@@ -63,6 +63,9 @@
         .badge.WAITING_FOR_USER, .badge.WAITING_FOR_APPROVAL { background: #fef3c7; color: #92400e; }
         .badge.SUCCEEDED { background: #dcfce7; color: #166534; }
         .badge.FAILED { background: #fee2e2; color: #991b1b; }
+        .badge.PASSED { background: #dcfce7; color: #166534; }
+        .badge.PASSED_WITH_WARNINGS { background: #fef3c7; color: #92400e; }
+        .verification-warning { background: #fffbeb; color: #92400e; padding: 1rem; border-radius: 0.375rem; }
         .timeline { list-style: none; padding: 0; margin: 0; }
         .timeline li { padding: 0.5rem 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
         .timeline li:last-child { border-bottom: none; }
@@ -145,6 +148,12 @@
                 <dd>{{ task.pull_request_number or "—" }}</dd>
                 <dt>Verification Status</dt>
                 <dd>{{ task.verification_status or "—" }}</dd>
+                <dt>Verification Summary</dt>
+                <dd>
+                    {% if task.verification_summary %}
+                    <span class="badge {{ task.verification_summary }}">{{ task.verification_summary }}</span>
+                    {% else %}—{% endif %}
+                </dd>
             </dl>
             {% if task.structured_output and task.structured_output.changed_files %}
             <h3>Changed Files</h3>
@@ -156,18 +165,37 @@
             {% endif %}
         </section>
 
-        {% if task.structured_output and task.structured_output.verification %}
+        {% if task.verification_items %}
         <section>
             <h2>Verification Results</h2>
             <div class="verification-grid">
-                {% for v in task.structured_output.verification %}
+                {% for v in task.verification_items %}
                 <div class="verification-item {{ v.result }}">
                     <h4>{{ v.result|upper }}</h4>
+                    <p><strong>{{ "Required" if v.required else "Supplemental" }}</strong></p>
                     <p><strong>Command:</strong> <code>{{ v.command }}</code></p>
                     <p><strong>Exit Code:</strong> {{ v.exit_code if v.exit_code is not none else "—" }}</p>
                     <p><strong>Notes:</strong> {{ v.notes or "—" }}</p>
                 </div>
                 {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if task.verification_warnings %}
+        <section>
+            <h2>Supplemental Warnings</h2>
+            <div class="verification-warning">
+                <ul>
+                    {% for warning in task.verification_warnings %}
+                    <li>
+                        <strong>Command:</strong> <code>{{ warning.command }}</code>;
+                        <strong>Result:</strong> {{ warning.result }};
+                        <strong>Exit Code:</strong> {{ warning.exit_code if warning.exit_code is not none else "—" }};
+                        <strong>Notes:</strong> {{ warning.notes or "—" }}
+                    </li>
+                    {% endfor %}
+                </ul>
             </div>
         </section>
         {% endif %}

@@ -10,6 +10,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, Stri
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from auto_remediation.database import Base
+from auto_remediation.verification import normalized_verification
 
 
 class WebhookDelivery(Base):
@@ -98,6 +99,8 @@ class RemediationTask(Base):
     acus_consumed: Mapped[float | None] = mapped_column(Float, nullable=True)
     structured_output: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     verification_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    verification_summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    verification_warnings: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     session_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -112,6 +115,11 @@ class RemediationTask(Base):
         "WebhookDelivery",
         back_populates="remediation_task",
     )
+
+    @property
+    def verification_items(self) -> list[dict[str, Any]]:
+        """Return structured verification items with required classification."""
+        return normalized_verification(self.issue_body, self.structured_output)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the task to a JSON-safe dictionary."""
@@ -140,6 +148,8 @@ class RemediationTask(Base):
             "acus_consumed": self.acus_consumed,
             "structured_output": self.structured_output,
             "verification_status": self.verification_status,
+            "verification_summary": self.verification_summary,
+            "verification_warnings": self.verification_warnings,
             "session_started_at": self.session_started_at.isoformat()
             if self.session_started_at
             else None,
