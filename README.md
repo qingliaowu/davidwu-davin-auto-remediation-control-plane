@@ -63,7 +63,7 @@ Components:
 - **GitHub webhook receiver** (`POST /webhooks/github`): raw-body HMAC-SHA256 validation via `X-Hub-Signature-256`.
 - **Eligibility policy**: only `issues.labeled` with `devin-fix` on an open issue in `GITHUB_ALLOWED_REPOSITORY` is accepted.
 - **SQLite task store**: SQLAlchemy 2 + `aiosqlite` persists webhook deliveries and remediation tasks.
-- **Background worker**: FastAPI lifespan loop claims `QUEUED` tasks, creates one Devin session per claim, polls until terminal, and applies repository-level concurrency limits.
+- **Background worker**: FastAPI lifespan loop claims `QUEUED` tasks, creates one Devin session per claim, polls active sessions, and applies repository-level concurrency limits.
 - **Devin client**: typed async HTTPX client with bounded retries, explicit timeouts, and sanitized errors.
 - **Dashboard / metrics**: Jinja2 server-rendered HTML and JSON endpoint for leadership observability.
 
@@ -75,8 +75,10 @@ Components:
 4. A `WebhookDelivery` row records the event; a duplicate `X-GitHub-Delivery` increments `attempt_count` and returns `200`.
 5. An eligible event creates a `RemediationTask` with status `QUEUED`.
 6. The worker claims the task, moves it to `DISPATCHING`, and calls Devin `POST /v3/organizations/{org_id}/sessions`.
-7. The task becomes `RUNNING`; the worker polls until terminal.
-8. The worker combines structured output, PR existence, and verification results to set `SUCCEEDED` or `FAILED`.
+7. The task becomes `RUNNING`; the worker polls until complete evidence or a terminal session state.
+8. The worker combines structured output, PR existence, required verification results, and
+   supplemental warnings to set the remediation outcome. Devin session lifecycle status and
+   `status_detail` are persisted separately.
 9. The dashboard and `/metrics` reflect the outcome.
 
 ## Prerequisites
@@ -214,13 +216,15 @@ The first request creates a task. The second request returns `200 duplicate` and
 - `waiting_tasks`
 - `successful_tasks`
 - `failed_tasks`
+- `tasks_with_warnings`
 - `pull_requests_created`
 - `success_rate`
 - `success_rate_percent`
 - `average_successful_task_duration_seconds`
 - `total_acus_consumed`
 
-The dashboard renders these as cards and lists recent tasks with status, dry-run indicator, Devin session link, PR link, and verification result.
+The dashboard renders these as cards and lists recent tasks with status, dry-run indicator, Devin
+session link, PR link, verification summary, and supplemental warnings.
 
 ## Tests
 
@@ -247,6 +251,7 @@ The dashboard renders these as cards and lists recent tasks with status, dry-run
 - **Devin client errors**: sanitized `error_code` and `error_message` persisted; task becomes `FAILED`.
 - **Ambiguous POST timeouts**: not retried to avoid duplicate Devin sessions.
 - **Restart recovery**: `QUEUED` and `RUNNING` tasks are reloaded; `DISPATCHING` tasks without a session ID are returned to `QUEUED`.
+  Tasks with stored structured output are re-classified without opening a new Devin session.
 
 ## Design Decisions
 
@@ -254,7 +259,11 @@ The dashboard renders these as cards and lists recent tasks with status, dry-run
 - **FastAPI lifespan worker**: avoids a separate worker process while remaining restart-safe.
 - **Server-rendered Jinja2 dashboard**: no React build step; minimal and professional.
 - **Per-repository concurrency**: `MAX_CONCURRENT_TASKS_PER_REPOSITORY` protects Devin resources and the target repo from too many simultaneous sessions.
-- **Success from evidence, not status**: `SUCCEEDED` requires structured `outcome == success`, a real PR URL, and no failed required verification. Devin `exit`/`suspended` alone is not treated as success.
+- **Success from evidence, not status**: `SUCCEEDED` requires structured `outcome == success`, a
+  real PR URL, and every required verification item passing. Supplemental failures produce
+  `PASSED_WITH_WARNINGS` without failing the remediation. Completion evidence can finalize a
+  task before Devin reports a terminal top-level status; `status_detail` values for waiting
+  states take precedence over `status`.
 
 ## Limitations
 

@@ -35,6 +35,11 @@ def build_remediation_prompt(task: RemediationTask) -> str:
             "fails, investigate the failure honestly and fix the underlying problem. "
             "Do not weaken or remove checks, and do not claim success without evidence."
         ),
+        (
+            "In your structured verification output, mark every verification command specified "
+            "in the GitHub issue as required: true. Any additional checks you choose to run "
+            "yourself must be marked required: false."
+        ),
         "Report any environmental blockers honestly.",
         "",
         "When the fix is ready:",
