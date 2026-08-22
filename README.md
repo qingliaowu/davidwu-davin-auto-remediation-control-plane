@@ -34,20 +34,22 @@ An event-driven Python service that listens for approved GitHub issues, dispatch
 
 Engineering teams accumulate GitHub issues that are small, well-scoped, and repetitive, yet they still require context switching, branch management, verification, and pull request hygiene. Automating the execution itself is risky because raw code generation can bypass policy, verification, and repository conventions. A safe autonomous workflow needs a control plane that decides what to do, and a trusted autonomous agent that does the engineering.
 
+<img width="1918" height="1080" alt="image" src="https://github.com/user-attachments/assets/832380ee-37e0-450c-8595-908ee7860733" />
+
+
 ## Solution
 
 The control plane exposes a single secure webhook endpoint. When a repository maintainer labels an issue with `devin-fix`, the plane verifies the request, persists the event, creates a durable task, and hands the task to Devin. It then polls the Devin session, normalizes status, classifies success from structured evidence, and surfaces the result in a dashboard and metrics endpoint.
 
-## Why Devin
-
-Devin is the core execution primitive because it is an autonomous software engineering agent that can read issues, inspect code, create branches, run verification commands, and open pull requests. The control plane does not generate code. It governs eligibility, idempotency, concurrency, secret handling, and verification tracking so Devin can focus on engineering.
-
-
-## How it works
 <img width="1918" height="1080" alt="image" src="https://github.com/user-attachments/assets/3d8eb2a8-6b73-4934-a800-2b7ec005b8dc" />
 
 
 
+
+
+## Why Devin
+
+Devin is the core execution primitive because it is an autonomous software engineering agent that can read issues, inspect code, create branches, run verification commands, and open pull requests. The control plane does not generate code. It governs eligibility, idempotency, concurrency, secret handling, and verification tracking so Devin can focus on engineering.
 
 
 ## Architecture
