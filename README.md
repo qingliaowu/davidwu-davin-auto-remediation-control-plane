@@ -42,6 +42,14 @@ The control plane exposes a single secure webhook endpoint. When a repository ma
 
 Devin is the core execution primitive because it is an autonomous software engineering agent that can read issues, inspect code, create branches, run verification commands, and open pull requests. The control plane does not generate code. It governs eligibility, idempotency, concurrency, secret handling, and verification tracking so Devin can focus on engineering.
 
+
+## How it works
+<img width="1918" height="1080" alt="image" src="https://github.com/user-attachments/assets/3d8eb2a8-6b73-4934-a800-2b7ec005b8dc" />
+
+
+
+
+
 ## Architecture
 
 ```mermaid
