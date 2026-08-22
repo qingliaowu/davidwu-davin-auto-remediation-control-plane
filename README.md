@@ -295,7 +295,3 @@ session link, PR link, verification summary, and supplemental warnings.
 
 [https://www.loom.com/share/35320638413f499d9e4f91dc01f059e4]
 
-## Example Issue and PR
-
-- Example issue: `https://github.com/qingliaowu/superset/issues/<number>`
-- Example pull request: `https://github.com/qingliaowu/superset/pull/<number>`
