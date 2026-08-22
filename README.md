@@ -283,7 +283,7 @@ session link, PR link, verification summary, and supplemental warnings.
 
 ## Loom Demo
 
-[Loom demo link placeholder — record a walkthrough of the dashboard, dry-run simulator, and duplicate-event demonstration.]
+[https://www.loom.com/share/35320638413f499d9e4f91dc01f059e4]
 
 ## Example Issue and PR
 
